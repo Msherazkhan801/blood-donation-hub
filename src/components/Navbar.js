@@ -23,6 +23,12 @@ export default function Navbar() {
             <Link href="/find-donor" className="text-black hover:text-red-600">Find Donors</Link>
           </li>
           <li>
+            <Link href="/thalassemia" className="text-black hover:text-red-600">Thalassemia Patients</Link>
+          </li>
+          <li>
+            <Link href="/emergency-blood-request" className="text-black hover:text-red-600">Emergency Blood Request</Link>
+          </li>
+          <li>
           </li>
         </ul>
         <Link
