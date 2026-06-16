@@ -2,16 +2,21 @@
 import { useState, useEffect } from "react";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
-import { FaFilter, FaMapMarkerAlt, FaPhone, FaSearch } from "react-icons/fa";
+import { FaFilter, FaMapMarkerAlt, FaPhone, FaSearch, FaCrosshairs } from "react-icons/fa";
+import LeafletMap from '../../components/LeafletMap';
 
 export default function FindDonorPage() {
   const [bloodType, setBloodType] = useState("All types");
   const [city, setCity] = useState("");
   
-  const [allDonors, setAllDonors] = useState([]);      // Permanent list from DB
-  const [filteredDonors, setFilteredDonors] = useState([]); // List shown to user
+  const [allDonors, setAllDonors] = useState([]);      
+  const [filteredDonors, setFilteredDonors] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // User current location tracking
+  const [userLocation, setUserLocation] = useState(null); 
+  const [locatingUser, setLocatingUser] = useState(false);
 
   // --- STEP 1: Fetch all donors on page load ---
   useEffect(() => {
@@ -21,8 +26,10 @@ export default function FindDonorPage() {
         if (!response.ok) throw new Error("Failed to fetch donors");
         
         const result = await response.json();
-        setAllDonors(result.data);     // Store the master list
-        setFilteredDonors(result.data); // Initially show everyone
+        
+        // Agar backend direct backend standard parameters 'latitude' / 'longitude' de raha hai toh unhe save karega
+        setAllDonors(result.data || []);     
+        setFilteredDonors(result.data || []); 
       } catch (err) {
         setError("Could not load donor data.");
       } finally {
@@ -32,7 +39,60 @@ export default function FindDonorPage() {
     fetchAllDonors();
   }, []);
 
-  // --- STEP 2: Handle Search in Frontend ---
+  // --- STEP 2: Request Browser Current Location ---
+  const requestUserLocation = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      return;
+    }
+
+    setLocatingUser(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const userCoords = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        };
+        setUserLocation(userCoords);
+        setLocatingUser(false);
+
+        // Sorting nearest donors logic if backend provides lat/lng
+        sortDonorsByProximity(userCoords);
+      },
+      (error) => {
+        console.error("Error getting location: ", error);
+        alert("Location access denied. Standard text filter will work.");
+        setLocatingUser(false);
+      }
+    );
+  };
+
+  // Helper: Haversine formula calculates approximate straight distance
+  const sortDonorsByProximity = (coords) => {
+    if (!allDonors || allDonors.length === 0) return;
+
+    const calculateDistance = (lat1, lon1, lat2, lon2) => {
+      const R = 6371; // Radius of earth in km
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    };
+
+    const sorted = [...allDonors].map(donor => {
+      // Fallback fallback lat-lng checks agar text matching handle karni ho
+      const donorLat = donor.latitude || 34.1880; // fallback AUST University
+      const donorLng = donor.longitude || 73.2100;
+      const dist = calculateDistance(coords.lat, coords.lng, donorLat, donorLng);
+      return { ...donor, distance: dist };
+    }).sort((a, b) => a.distance - b.distance);
+
+    setFilteredDonors(sorted);
+  };
+
+  // --- STEP 3: Handle Search in Frontend ---
   const handleSearch = (e) => {
     e.preventDefault();
     
@@ -46,7 +106,7 @@ export default function FindDonorPage() {
     // Filter by City
     if (city !== "") {
       results = results.filter((donor) => 
-        donor.city.toLowerCase() === city.toLowerCase()
+        donor.city && donor.city.toLowerCase() === city.toLowerCase()
       );
     }
 
@@ -56,12 +116,28 @@ export default function FindDonorPage() {
   return (
     <>
       <Navbar />
+      
+      {/* Dynamic Map Area */}
+      <div className="w-full">
+        <LeafletMap donorsList={filteredDonors} centerLocation={userLocation} />
+      </div>
+
       <section className="max-w-6xl mx-auto px-4 py-12">
         <div className="text-center mb-10">
           <div className="flex justify-center items-center gap-2 text-red-600 text-4xl">
             <FaSearch />
             <h1 className="text-3xl md:text-4xl font-bold text-black">Find Blood Requests</h1>
           </div>
+          
+          {/* Location Request Button */}
+          <button 
+            onClick={requestUserLocation}
+            disabled={locatingUser}
+            className="mt-4 inline-flex items-center gap-2 bg-blue-600 text-white px-5 py-2 rounded-md shadow-md text-sm font-semibold hover:bg-blue-700 transition"
+          >
+            <FaCrosshairs className={`${locatingUser ? 'animate-spin' : ''}`} />
+            {locatingUser ? "Locating you..." : "Find Nearest Donors Near Me"}
+          </button>
         </div>
 
         {/* Filter Card */}
@@ -92,11 +168,10 @@ export default function FindDonorPage() {
                 <option value="">All Cities</option>
                 <option>Abbottabad</option>
                 <option>Peshawar</option>
-                <option>Hripur</option>
+                <option>Haripur</option>
                 <option>Lahore</option>
                 <option>Karachi</option>
                 <option>Islamabad</option><option>Rawalpindi</option>
-                {/* ... other cities */}
               </select>
             </div>
 
@@ -132,32 +207,37 @@ export default function FindDonorPage() {
               <tbody>
                 {filteredDonors.map((donor, idx) => (
                   <tr key={idx} className="border-b hover:bg-gray-50">
-                    <td className="py-4 px-6 font-semibold">{donor.firstName} {donor.lastName}</td>
+                    <td className="py-4 px-6 font-semibold">
+                      {donor.firstName || donor.name || "Test User"} {donor.lastName || ""}
+                    </td>
                     <td className="py-4 px-6 text-red-600 font-bold">{donor.bloodType}</td>
-                    <td className="py-4 px-6">{donor.city}</td>
                     <td className="py-4 px-6">
-      <a 
-        href={`tel:${donor.phone}`} 
-        className="flex items-center gap-2 text-blue-600 hover:text-blue-800 transition-colors font-medium"
-        title="Call Donor"
-      >
-        <FaPhone className="text-sm rotate-90" />
-        {donor.phone}
-      </a>
-    </td>
-                    {/* <td className="py-4 px-6">{donor.phone}</td> */}
-                    {/* <td className="py-4 px-6 text-gray-500">{donor.streetAddress}</td> */}
+                      {donor.city}
+                      {/* {userLocation && donor.distance && (
+                        <span className="text-xs text-blue-500 block">({donor.distance.toFixed(1)} km away)</span>
+                      )} */}
+                      {/* {!userLocation && <span className="text-xs text-gray-400 block">({`Click "Find Nearest" for distance`})</span>} */}
+                    </td>
                     <td className="py-4 px-6">
-  <a 
-    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${donor.streetAddress}, ${donor.city}`)}`}
-    target="_blank" 
-    rel="noopener noreferrer"
-    className="text-blue-600 hover:underline flex items-center gap-1"
-  >
-    <FaMapMarkerAlt className="text-red-500" />
-    {donor.streetAddress}
-  </a>
-</td>
+                      <a 
+                        href={`tel:${donor.phone || donor.contact}`} 
+                        className="flex items-center gap-2 text-blue-600 hover:text-blue-800 transition-colors font-medium"
+                      >
+                        <FaPhone className="text-sm rotate-90" />
+                        {donor.phone || donor.contact || "031212000000"}
+                      </a>
+                    </td>
+                    <td className="py-4 px-6">
+                      <a 
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${donor.streetAddress || donor.address || 'testing'}, ${donor.city}`)}`}
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline flex items-center gap-1"
+                      >
+                        <FaMapMarkerAlt className="text-red-500" />
+                        {donor.streetAddress || donor.address || "testing"}
+                      </a>
+                    </td>
                   </tr>
                 ))}
               </tbody>

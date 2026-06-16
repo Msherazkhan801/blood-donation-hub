@@ -1,9 +1,10 @@
 import Link from 'next/link'
 import React from 'react'
 import { FaHeart, FaUsers } from 'react-icons/fa'
-
 const Hero = () => {
   return (
+    <>
+  
     <section className="bg-red-50 py-20 text-center px-4">
         <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
          مَن أَحْيَاها فَكأنَّما أَحْيَا النَّاسَ جَمِيعًا
@@ -25,6 +26,7 @@ const Hero = () => {
            </Link>
         </div>
       </section>
+      </>
   )
 }
 
